@@ -22,8 +22,9 @@ import logging
 import oadr3/schema
 import oadr3/utils
 
+/// Will start a web server on localhost:8000
 pub fn main() {
-  observer_start()
+  //  observer_start()
   let listener_name = process.new_name("noadr_listener")
   let connection_factory_name = process.new_name("noadr_connection_factory")
   logging.configure()
@@ -37,10 +38,10 @@ pub fn main() {
   process.sleep_forever()
 }
 
-type ErlangResult
+// type ErlangResult
 
-@external(erlang, "observer", "start")
-fn observer_start() -> ErlangResult
+// @external(erlang, "observer", "start")
+// fn observer_start() -> ErlangResult
 
 type DayAheadError {
   NoContent

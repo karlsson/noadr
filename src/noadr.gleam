@@ -5,6 +5,7 @@ import ewe
 import gleam/bit_array
 import gleam/dict
 import gleam/dynamic/decode
+import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process
 import gleam/http.{Get}
 import gleam/http/request
@@ -13,6 +14,7 @@ import gleam/httpc
 import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/otp/actor
 import gleam/result
 import gleam/string
 import gleam/time/calendar
@@ -24,24 +26,40 @@ import oadr3/utils
 
 /// Will start a web server on localhost:8000
 pub fn main() {
-  //  observer_start()
-  let listener_name = process.new_name("noadr_listener")
-  let connection_factory_name = process.new_name("noadr_connection_factory")
-  logging.configure()
-  logging.set_level(logging.Info)
-  let assert Ok(_) =
-    ewe.new(listener_name:, connection_factory_name:, handler: handle_request)
-    |> ewe.bind(to: "localhost")
-    |> ewe.listening(on: 8000)
-    |> ewe.start
+  observer_start()
 
   process.sleep_forever()
 }
 
-// type ErlangResult
+pub fn start(_app: Atom, _type) -> Result(process.Pid, actor.StartError) {
+  // io.println("Application start - starts the top supervisor")
+  case start_ewe() {
+    Ok(actor.Started(pid, _data)) -> {
+      Ok(pid)
+    }
+    Error(reason) -> Error(reason)
+  }
+}
 
-// @external(erlang, "observer", "start")
-// fn observer_start() -> ErlangResult
+pub fn stop(_state: a) -> Atom {
+  atom.create("ok")
+}
+
+fn start_ewe() {
+  logging.configure()
+  logging.set_level(logging.Info)
+  let assert Ok(_) =
+    ewe.new(handler: handle_request)
+    |> ewe.bind(to: "localhost")
+    |> ewe.named(process.new_name("ewe_rest_for_one_sup"))
+    |> ewe.listening(on: 8000)
+    |> ewe.start
+}
+
+type ErlangResult
+
+@external(erlang, "observer", "start")
+fn observer_start() -> ErlangResult
 
 type DayAheadError {
   NoContent

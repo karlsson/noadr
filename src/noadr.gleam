@@ -15,6 +15,8 @@ import gleam/json
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/actor
+import gleam/otp/static_supervisor as sup
+import gleam/otp/supervision
 import gleam/result
 import gleam/string
 import gleam/time/calendar
@@ -24,18 +26,17 @@ import logging
 import oadr3/schema
 import oadr3/utils
 
-/// Will start a web server on localhost:8000
-pub fn main() {
+pub fn main() -> Nil {
   observer_start()
-
   process.sleep_forever()
 }
 
-pub fn start(_app: Atom, _type) -> Result(process.Pid, actor.StartError) {
+// --- Erlang application callbacks
+pub fn start(_app: Atom, _type: a) -> Result(process.Pid, actor.StartError) {
   // io.println("Application start - starts the top supervisor")
-  case start_ewe() {
-    Ok(actor.Started(pid, _data)) -> {
-      Ok(pid)
+  case start_top_supervisor() {
+    Ok(started) -> {
+      Ok(started.pid)
     }
     Error(reason) -> Error(reason)
   }
@@ -45,15 +46,31 @@ pub fn stop(_state: a) -> Atom {
   atom.create("ok")
 }
 
-fn start_ewe() {
+// ------------
+
+/// Application top supervisor
+fn start_top_supervisor() -> Result(
+  actor.Started(sup.Supervisor),
+  actor.StartError,
+) {
+  // Child specifications
+  let ewe = supervision.supervisor(start_ewe)
+
+  // Start supervisor with child specs
+  sup.new(sup.OneForOne)
+  |> sup.add(ewe)
+  |> sup.start
+}
+
+/// Will start a web server supervisor tree on localhost:8000
+fn start_ewe() -> Result(actor.Started(ewe.SocketAddress), actor.StartError) {
   logging.configure()
   logging.set_level(logging.Info)
-  let assert Ok(_) =
-    ewe.new(handler: handle_request)
-    |> ewe.bind(to: "localhost")
-    |> ewe.named(process.new_name("ewe_rest_for_one_sup"))
-    |> ewe.listening(on: 8000)
-    |> ewe.start
+  ewe.new(handler: handle_request)
+  |> ewe.bind(to: "localhost")
+  |> ewe.named(process.new_name("ewe_rest_for_one_sup"))
+  |> ewe.listening(on: 8000)
+  |> ewe.start
 }
 
 type ErlangResult
@@ -323,7 +340,7 @@ fn day_ahead_response(
   response: response.Response(String),
   currency: Currency,
   energy_unit: EnergyUnit,
-) {
+) -> Result(DayAheadResponse, DayAheadError) {
   let response.Response(status:, body:, ..) = response
   case status {
     200 ->
@@ -335,7 +352,10 @@ fn day_ahead_response(
   }
 }
 
-fn day_ahead_response_decoder(currency: Currency, energy_unit: EnergyUnit) {
+fn day_ahead_response_decoder(
+  currency: Currency,
+  energy_unit: EnergyUnit,
+) -> decode.Decoder(DayAheadResponse) {
   use delivery_date_cet <- decode.field("deliveryDateCET", decode.string)
   use version <- decode.field("version", decode.int)
   use updated_at <- decode.optional_field(
@@ -376,7 +396,7 @@ fn day_ahead_response_decoder(currency: Currency, energy_unit: EnergyUnit) {
   ))
 }
 
-fn timestamp_decoder() {
+fn timestamp_decoder() -> decode.Decoder(Timestamp) {
   use string <- decode.then(decode.string)
   case timestamp.parse_rfc3339(string) {
     Ok(ts) -> decode.success(ts)
@@ -384,7 +404,7 @@ fn timestamp_decoder() {
   }
 }
 
-fn delivery_area_decoder() {
+fn delivery_area_decoder() -> decode.Decoder(DeliveryArea) {
   use da_string <- decode.then(decode.string)
   case string_to_delivery_area(da_string) {
     Ok(da) -> decode.success(da)
@@ -426,7 +446,7 @@ fn string_to_delivery_area(da_string: String) -> Result(DeliveryArea, Nil) {
   }
 }
 
-fn area_entry_decoder(area: DeliveryArea) {
+fn area_entry_decoder(area: DeliveryArea) -> decode.Decoder(AreaEntry) {
   use start <- decode.field("deliveryStart", timestamp_decoder())
   use end <- decode.field("deliveryEnd", timestamp_decoder())
   let duration = timestamp.difference(start, end)
@@ -438,7 +458,7 @@ fn area_entry_decoder(area: DeliveryArea) {
 // ---- Encode to OpenADR 
 
 // https://github.com/grid-coordination/openadr3-specification/blob/main/3.1.0/User_Guide.md#multi-valued-payloads
-fn encode_price_event(day: DayAheadResponse) {
+fn encode_price_event(day: DayAheadResponse) -> json.Json {
   let pldf = fn(dar: DayAheadResponse) -> List(schema.EventPayloadDescriptor) {
     [
       schema.EventPayloadDescriptor(
@@ -620,7 +640,7 @@ fn delivery_area_to_country(delivery_area: DeliveryArea) -> Country {
   }
 }
 
-fn energy_unit_string(e: EnergyUnit) {
+fn energy_unit_string(e: EnergyUnit) -> String {
   case e {
     MWH -> "MWH"
     KWH -> "KWH"

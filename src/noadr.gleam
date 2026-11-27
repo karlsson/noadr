@@ -16,7 +16,6 @@ import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/static_supervisor as sup
-import gleam/otp/supervision
 import gleam/result
 import gleam/string
 import gleam/time/calendar
@@ -54,23 +53,23 @@ fn start_top_supervisor() -> Result(
   actor.StartError,
 ) {
   // Child specifications
-  let ewe = supervision.supervisor(start_ewe)
+  //
 
   // Start supervisor with child specs
   sup.new(sup.OneForOne)
-  |> sup.add(ewe)
+  |> sup.add(ewe_spec())
   |> sup.start
 }
 
 /// Will start a web server supervisor tree on localhost:8000
-fn start_ewe() -> Result(actor.Started(ewe.SocketAddress), actor.StartError) {
+fn ewe_spec() {
   logging.configure()
   logging.set_level(logging.Info)
   ewe.new(handler: handle_request)
   |> ewe.bind(to: "localhost")
   |> ewe.named(process.new_name("ewe_rest_for_one_sup"))
   |> ewe.listening(on: 8000)
-  |> ewe.start
+  |> ewe.supervised()
 }
 
 type ErlangResult
